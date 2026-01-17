@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Industrial Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --main-bg: #0f172a; --card-bg: #1e293b; --accent: #38bdf8; --danger: #ef4444; }
+        body { background: var(--main-bg); color: white; font-family: 'Segoe UI', sans-serif; margin: 0; }
+        .header { background: #111827; padding: 20px; border-bottom: 2px solid var(--accent); }
+        .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; padding: 20px; }
+        .panel { background: var(--card-bg); border-radius: 12px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .status-ok { color: #10b981; font-weight: bold; }
+        .alarm { background: var(--danger) !important; animation: blink 1s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .btn { background: var(--accent); border: none; padding: 10px 20px; border-radius: 6px; color: black; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h2>Smart Wellhead System | <span id="clock">00:00:00</span></h2>
+</div>
+
+<div class="grid">
+    <div class="panel" id="main-panel">
+        <h3>Телеметрия (Node: KAZ-001)</h3>
+        <hr border="0.5">
+        <p>Давление: <strong id="val-pres">5.82</strong> Atm</p>
+        <p>Связь LoRa: <span class="status-ok">Стабильна</span></p>
+        <p>Задвижка: <span id="val-valve">ОТКРЫТА</span></p>
+        <p>RSSI: -94 dBm</p>
+        <button class="btn" onclick="emergencyClose()">ЭКСТРЕННЫЙ СТОП</button>
+    </div>
+
+    <div class="panel">
+        <canvas id="liveChart"></canvas>
+    </div>
+</div>
+
+<script>
+    const ctx = document.getElementById('liveChart').getContext('2d');
+    let chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{ label: 'Давление (Atm)', borderColor: '#38bdf8', data: [], tension: 0.3 }]
+        },
+        options: { scales: { y: { beginAtZero: false } } }
+    });
+
+    setInterval(() => {
+        let now = new Date();
+        document.getElementById('clock').innerText = now.toLocaleTimeString();
+        
+        
+        let newPressure = (5 + Math.random()).toFixed(2);
+        document.getElementById('val-pres').innerText = newPressure;
+        
+        if(chart.data.labels.length > 10) chart.data.labels.shift();
+        if(chart.data.datasets[0].data.length > 10) chart.data.datasets[0].data.shift();
+        
+        chart.data.labels.push(now.getSeconds());
+        chart.data.datasets[0].data.push(newPressure);
+        chart.update();
+    }, 2000);
+
+    function emergencyClose() {
+        document.getElementById('main-panel').classList.add('alarm');
+        document.getElementById('val-valve').innerText = "ЗАКРЫТА (АВАРИЯ)";
+        alert("Команда блокировки отправлена через LoRa шлюз!");
+    }
+</script>
+
+</body>
+</html>
