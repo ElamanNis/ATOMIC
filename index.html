@@ -2,75 +2,114 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Industrial Monitoring Dashboard</title>
+    <title>Smart Wellhead Control Center v5.0</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { --main-bg: #0f172a; --card-bg: #1e293b; --accent: #38bdf8; --danger: #ef4444; }
-        body { background: var(--main-bg); color: white; font-family: 'Segoe UI', sans-serif; margin: 0; }
-        .header { background: #111827; padding: 20px; border-bottom: 2px solid var(--accent); }
-        .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; padding: 20px; }
-        .panel { background: var(--card-bg); border-radius: 12px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .status-ok { color: #10b981; font-weight: bold; }
-        .alarm { background: var(--danger) !important; animation: blink 1s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        .btn { background: var(--accent); border: none; padding: 10px 20px; border-radius: 6px; color: black; font-weight: bold; cursor: pointer; }
+        :root { --bg: #0b0f19; --card: #161b2a; --text: #e2e8f0; --accent: #00d2ff; --warn: #facc15; --crit: #ff4b2b; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding: 20px; }
+        .dashboard-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; border: 1px solid #232a3d; transition: 0.3s; }
+        .card:hover { border-color: var(--accent); }
+        .sensor-val { font-size: 24px; font-weight: bold; color: var(--accent); }
+        .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; text-transform: uppercase; }
+        .status-ok { background: #064e3b; color: #34d399; }
+        .main-layout { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; }
+        .chart-container { background: var(--card); padding: 20px; border-radius: 12px; height: 400px; }
+        .log-container { background: var(--card); padding: 20px; border-radius: 12px; height: 400px; overflow-y: auto; font-size: 13px; }
+        .log-entry { border-bottom: 1px solid #232a3d; padding: 5px 0; display: flex; justify-content: space-between; }
+        .alert-active { animation: pulse-red 1.5s infinite; border-color: var(--crit); }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(255, 75, 43, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(255, 75, 43, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 75, 43, 0); } }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <h2>Smart Wellhead System | <span id="clock">00:00:00</span></h2>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:30px;">
+    <h2>WELLHEAD ASSET MONITORING <span style="color:var(--accent)">[KAZ-URALS-001]</span></h2>
+    <div>
+        <span class="status-badge status-ok">LoRa Link: Active</span>
+        <span class="status-badge" style="background:#1e293b">Node ID: ESP32_PRO_v5</span>
+    </div>
 </div>
 
-<div class="grid">
-    <div class="panel" id="main-panel">
-        <h3>Телеметрия (Node: KAZ-001)</h3>
-        <hr border="0.5">
-        <p>Давление: <strong id="val-pres">5.82</strong> Atm</p>
-        <p>Связь LoRa: <span class="status-ok">Стабильна</span></p>
-        <p>Задвижка: <span id="val-valve">ОТКРЫТА</span></p>
-        <p>RSSI: -94 dBm</p>
-        <button class="btn" onclick="emergencyClose()">ЭКСТРЕННЫЙ СТОП</button>
+<div class="dashboard-grid">
+    <div class="card">
+        <div>ДАВЛЕНИЕ (PRESSURE)</div>
+        <div class="sensor-val"><span id="pres-val">0.00</span> <small>Bar</small></div>
+        <div style="font-size:11px; color:#64748b">Норма: 4.5 - 6.2 Bar</div>
     </div>
+    <div class="card" id="leak-card">
+        <div>ПРОТЕЧКА (LEAK SENSOR)</div>
+        <div class="sensor-val" id="leak-status">CLEAR</div>
+        <div style="font-size:11px; color:#64748b">Датчик: XKC-Y25 (Non-contact)</div>
+    </div>
+    <div class="card">
+        <div>ПОТОК (FLOW RATE)</div>
+        <div class="sensor-val"><span id="flow-val">12.4</span> <small>L/min</small></div>
+    </div>
+    <div class="card">
+        <div>КЛАПАН (VALVE STATE)</div>
+        <div class="sensor-val" id="valve-val" style="color:#34d399">OPEN</div>
+    </div>
+</div>
 
-    <div class="panel">
-        <canvas id="liveChart"></canvas>
+<div class="main-layout">
+    <div class="chart-container">
+        <canvas id="telemetryChart"></canvas>
+    </div>
+    <div class="log-container">
+        <h4 style="margin-top:0">СИСТЕМНЫЙ ЛОГ (Real-time)</h4>
+        <div id="event-log"></div>
     </div>
 </div>
 
 <script>
-    const ctx = document.getElementById('liveChart').getContext('2d');
+    const ctx = document.getElementById('telemetryChart').getContext('2d');
     let chart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: [],
-            datasets: [{ label: 'Давление (Atm)', borderColor: '#38bdf8', data: [], tension: 0.3 }]
+            datasets: [{ label: 'Pressure (Bar)', borderColor: '#00d2ff', backgroundColor: 'rgba(0, 210, 255, 0.1)', fill: true, data: [], tension: 0.4 }]
         },
-        options: { scales: { y: { beginAtZero: false } } }
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#232a3d' } }, x: { grid: { display: false } } } }
     });
 
-    setInterval(() => {
-        let now = new Date();
-        document.getElementById('clock').innerText = now.toLocaleTimeString();
+    //
+    function processIncomingData() {
         
+        let rawPressure = (5 + Math.random() * 1.5).toFixed(2);
+        let leakTrigger = Math.random() > 0.95; // 5% шанс симуляции протечки
         
-        let newPressure = (5 + Math.random()).toFixed(2);
-        document.getElementById('val-pres').innerText = newPressure;
+        // Обновление UI
+        document.getElementById('pres-val').innerText = rawPressure;
         
-        if(chart.data.labels.length > 10) chart.data.labels.shift();
-        if(chart.data.datasets[0].data.length > 10) chart.data.datasets[0].data.shift();
+        let now = new Date().toLocaleTimeString();
         
-        chart.data.labels.push(now.getSeconds());
-        chart.data.datasets[0].data.push(newPressure);
+        // Логика обработки критической аварии
+        if (leakTrigger) {
+            document.getElementById('leak-card').classList.add('alert-active');
+            document.getElementById('leak-status').innerText = "!!! CRITICAL !!!";
+            document.getElementById('leak-status').style.color = "#ff4b2b";
+            document.getElementById('valve-val').innerText = "CLOSED";
+            document.getElementById('valve-val').style.color = "#ff4b2b";
+            addLogEntry(now, "ALARM", "Leak detected! Emergency valve closure executed.");
+        }
+
+        
+        if(chart.data.labels.length > 15) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+        chart.data.labels.push(now);
+        chart.data.datasets[0].data.push(rawPressure);
         chart.update();
-    }, 2000);
-
-    function emergencyClose() {
-        document.getElementById('main-panel').classList.add('alarm');
-        document.getElementById('val-valve').innerText = "ЗАКРЫТА (АВАРИЯ)";
-        alert("Команда блокировки отправлена через LoRa шлюз!");
     }
-</script>
 
+    function addLogEntry(time, type, msg) {
+        const log = document.getElementById('event-log');
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML = `<span>[${time}] <b>${type}:</b> ${msg}</span>`;
+        log.prepend(entry);
+    }
+
+    setInterval(processIncomingData, 3000);
+</script>
 </body>
 </html>
